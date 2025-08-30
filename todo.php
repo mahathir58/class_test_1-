@@ -43,9 +43,37 @@ if (isset($_POST['add_task'])) {
     $stmt->close();
 }
 
+// Get tags for forms
 $tags = $conn->query("SELECT * FROM tags");
 
-$tasks = $conn->query("SELECT tasks.*, tags.name AS tag_name FROM tasks LEFT JOIN tags ON tasks.tag_id = tags.id ORDER BY tasks.created_at DESC");
+// Handle delete task
+if (isset($_GET['delete'])) {
+    $delete_id = intval($_GET['delete']);
+    $conn->query("DELETE FROM tasks WHERE id=$delete_id");
+    header("Location: todo.php");
+    exit;
+}
+
+// Handle edit task
+if (isset($_POST['edit_task'])) {
+    $edit_id = intval($_POST['edit_id']);
+    $edit_title = $_POST['edit_title'];
+    $edit_tag_id = $_POST['edit_tag_id'];
+    $stmt = $conn->prepare("UPDATE tasks SET title=?, tag_id=? WHERE id=?");
+    $stmt->bind_param("sii", $edit_title, $edit_tag_id, $edit_id);
+    $stmt->execute();
+    $stmt->close();
+    header("Location: todo.php");
+    exit;
+}
+
+// Handle filter
+$filter_tag = isset($_GET['filter_tag']) ? intval($_GET['filter_tag']) : '';
+if ($filter_tag) {
+    $tasks = $conn->query("SELECT tasks.*, tags.name AS tag_name FROM tasks LEFT JOIN tags ON tasks.tag_id = tags.id WHERE tasks.tag_id=$filter_tag ORDER BY tasks.created_at DESC");
+} else {
+    $tasks = $conn->query("SELECT tasks.*, tags.name AS tag_name FROM tasks LEFT JOIN tags ON tasks.tag_id = tags.id ORDER BY tasks.created_at DESC");
+}
 ?>
 <!DOCTYPE html>
 <html>
@@ -81,12 +109,46 @@ $tasks = $conn->query("SELECT tasks.*, tags.name AS tag_name FROM tasks LEFT JOI
             </select>
             <button type="submit" name="add_task">Add Task</button>
         </form>
+        <h2>Filter Tasks by Tag</h2>
+        <form method="get">
+            <select name="filter_tag">
+                <option value="">All Tags</option>
+                <?php 
+                $tags_filter = $conn->query("SELECT * FROM tags");
+                while($row = $tags_filter->fetch_assoc()): ?>
+                    <option value="<?php echo $row['id']; ?>" <?php if(isset($_GET['filter_tag']) && $_GET['filter_tag']==$row['id']) echo 'selected'; ?>><?php echo $row['name']; ?></option>
+                <?php endwhile; ?>
+            </select>
+            <button type="submit">Filter</button>
+        </form>
         <h2>Tasks</h2>
         <ul>
-            <?php while($row = $tasks->fetch_assoc()): ?>
+            <?php 
+            // For edit form
+            $edit_mode = isset($_GET['edit']) ? intval($_GET['edit']) : 0;
+            while($row = $tasks->fetch_assoc()): ?>
                 <li>
-                    <?php echo htmlspecialchars($row['title']); ?>
-                    <?php if ($row['tag_name']) echo " (" . htmlspecialchars($row['tag_name']) . ")"; ?>
+                    <?php if ($edit_mode && $edit_mode == $row['id']): ?>
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="edit_id" value="<?php echo $row['id']; ?>">
+                            <input type="text" name="edit_title" value="<?php echo htmlspecialchars($row['title']); ?>" required>
+                            <select name="edit_tag_id">
+                                <option value="">No Tag</option>
+                                <?php 
+                                $tags_edit = $conn->query("SELECT * FROM tags");
+                                while($tag = $tags_edit->fetch_assoc()): ?>
+                                    <option value="<?php echo $tag['id']; ?>" <?php if($row['tag_id']==$tag['id']) echo 'selected'; ?>><?php echo $tag['name']; ?></option>
+                                <?php endwhile; ?>
+                            </select>
+                            <button type="submit" name="edit_task">Save</button>
+                            <a href="todo.php">Cancel</a>
+                        </form>
+                    <?php else: ?>
+                        <?php echo htmlspecialchars($row['title']); ?>
+                        <?php if ($row['tag_name']) echo " (" . htmlspecialchars($row['tag_name']) . ")"; ?>
+                        <a href="?edit=<?php echo $row['id']; ?>">Edit</a>
+                        <a href="?delete=<?php echo $row['id']; ?>" onclick="return confirm('Delete this task?');">Delete</a>
+                    <?php endif; ?>
                 </li>
             <?php endwhile; ?>
         </ul>
